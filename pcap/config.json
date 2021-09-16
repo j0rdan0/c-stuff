@@ -1,4 +1,5 @@
 {
     "interface": "en0",
-    "filter": "port 80"
+    "filter": "port 443",
+    "packets_c": 10
 }

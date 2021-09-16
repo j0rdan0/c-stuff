@@ -23,6 +23,8 @@
     "limits": "c",
     "typeinfo": "c",
     "pcap-inttypes.h": "c",
-    "bpf.h": "c"
+    "bpf.h": "c",
+    "ctype.h": "c",
+    "_ctype.h": "c"
   }
 }

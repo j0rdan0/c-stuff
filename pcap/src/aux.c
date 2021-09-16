@@ -5,6 +5,7 @@
 #include <pcap.h>
 #include <time.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 
 void readConfig(struct Conf* c) {
     json_t* config = json_object();
@@ -30,6 +31,11 @@ void readConfig(struct Conf* c) {
     if (!filter) {
         printf("Failed to get filter string\n");
     }
+    json_t* packets_c;
+    packets_c = json_object_get(config,"packets_c");
+    if (!packets_c) {
+        printf("Failed to get packets count\n");
+    }
 
     char* conf_interface = malloc(100);
     memcpy(conf_interface,json_string_value(interface),strlen(json_string_value(interface)));
@@ -41,10 +47,13 @@ void readConfig(struct Conf* c) {
 
     c->filter= conf_filter;
 
+    c->packets_c = json_integer_value(packets_c);
+
     json_decref(config);
     fclose(f);
     free(conf_interface);
     free(conf_filter);
+
 }
 
 void getVersion() {
@@ -56,45 +65,24 @@ void getVersion() {
 void sniff(struct Conf* conf) {
     
         pcap_t* handle = init(conf);
-    
-        int data_link = pcap_datalink(handle);
-        printf("Device: %s\n",conf->interface);
-        printf("Data link header type: %d\n",data_link);
-        printf("Data link header description: %s\n",pcap_datalink_val_to_description(data_link)); // get L2 info
+
+        getL2Info(handle,conf);
         getInterfaceInfo(conf);
 
-        struct bpf_program pf; 
-        printf("Filter: %s\n",conf->filter);
-    
-        int res = pcap_compile(handle,&pf,conf->filter,1,PCAP_NETMASK_UNKNOWN);  // compile filter expression
-
-        if ( res == -1) {
-            fprintf(stderr,"%s\n",pcap_geterr(handle));
-        } else {
-            printf("Created BPF struct\n");
-        }
+        setFilter(handle,conf);
+        pcap_loop(handle,conf->packets_c,packetHandler,NULL);
         
-
-        res = pcap_setfilter(handle,&pf); // apply filter expression
-        if ( res == -1) {
-             fprintf(stderr,"%s\n",pcap_geterr(handle));
-        } else {
-            printf("Set filter\n");
-        }
+        pcap_close(handle);
     
+}
 
-        struct pcap_pkthdr header;
-        const u_char* packet;
-
-        packet = pcap_next(handle,&header); // capture packet
-
-        if (!packet) {
+void packetHandler(u_char *args, const struct pcap_pkthdr *header,const u_char *packet) {
+    if (!packet) {
             perror(getTime());
-            pcap_close(handle);
            _exit(-1);
         }
-        printf("Len: %d\n",header.len);
-        printf("Cap len: %d\n",header.caplen);
+        printf("Len: %d\n",header->len);
+        printf("Cap len: %d\n",header->caplen);
 
         const struct sniff_ethernet* ethernet; /* The ethernet header */
         const struct sniff_ip *ip; /* The IP header */
@@ -113,7 +101,7 @@ void sniff(struct Conf* conf) {
 	    size_tcp = TH_OFF(tcp)*4;
         payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 
-        payload_len = header.caplen - (size_ip + size_tcp-14);
+        payload_len = header->caplen - (size_ip + size_tcp-14);
 
     
         getL2Header(ethernet);
@@ -124,24 +112,21 @@ void sniff(struct Conf* conf) {
         printf("TCP dport: %d\n",ntohs(tcp->th_dport));
         printf("TCP sport: %d\n",ntohs(tcp->th_sport));
         printf("Payload len: %d\n",payload_len);
+        printf("\n");
+    if (payload_len > 0) {
+        const u_char* temp = payload;
+        for ( int i=0; i < payload_len;temp++,i++) {
+            if (isprint(*temp)) {
+                printf("%c",*temp);
+            } 
+            else {
+                 printf("0X%X ",*temp);
+            }
+           
 
-       
-        if (payload_len > 0) {      // print payload as ASCII
-            const u_char *temp_pointer = payload;
-            int byte_count = 0;
-         while (byte_count++ < payload_len) {
-                printf("%c", *temp_pointer);
-                temp_pointer++;
         }
         printf("\n");
-        }
-
-        pcap_close(handle);
-    
-}
-
-void packetHandler(u_char *args, const struct pcap_pkthdr *header,const u_char *packet) {
-    // handler for pcap_loop()
+    }
 }
 
 char* getTime() {
@@ -223,4 +208,32 @@ void getInterfaceInfo(struct Conf* conf) {
         printf("Got pcap handle\n");
         return handle;
 
+}
+
+void getL2Info(pcap_t* handle,struct Conf* conf) {
+    int data_link = pcap_datalink(handle);
+        printf("Device: %s\n",conf->interface);
+        printf("Data link header type: %d\n",data_link);
+        printf("Data link header description: %s\n",pcap_datalink_val_to_description(data_link)); // get L2 info
+}
+
+void setFilter(pcap_t* handle,struct Conf* conf) {
+     struct bpf_program pf; 
+        printf("Filter: %s\n",conf->filter);
+    
+        int res = pcap_compile(handle,&pf,conf->filter,1,PCAP_NETMASK_UNKNOWN);  // compile filter expression
+
+        if ( res == -1) {
+            fprintf(stderr,"%s\n",pcap_geterr(handle));
+        } else {
+            printf("Created BPF struct\n");
+        }
+        
+
+        res = pcap_setfilter(handle,&pf); // apply filter expression
+        if ( res == -1) {
+             fprintf(stderr,"%s\n",pcap_geterr(handle));
+        } else {
+            printf("Set filter\n");
+        }
 }
