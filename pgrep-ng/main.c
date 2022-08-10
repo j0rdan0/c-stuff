@@ -39,7 +39,6 @@ void getCmdline(char* pid) {
                 for(int i=start+1; comm[i] != ')';i++) {
                         printf("%c",comm[i]);
                 }
-                printf("\n");
                 free(comm);
                 fclose(f);
                 
